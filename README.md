@@ -67,7 +67,7 @@ A fully serverless, near real-time data pipeline that ingests live stock market 
          │
          ▼
 ┌─────────────────────┐
-│   Streamlit         │──── Live dashboard on localhost
+│   Streamlit         │──── Live dashboard on EC2
 │   Dashboard         │
 └─────────────────────┘
 ```
