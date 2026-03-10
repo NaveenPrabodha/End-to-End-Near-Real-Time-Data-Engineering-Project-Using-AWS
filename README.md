@@ -1,201 +1,265 @@
-# End-to-End-Near-Real-Time-Data-Engineering-Project-Using-AWS
-In this project, set up an end-to-end real-time data pipeline using AWS Kinesis Data Firehose. The goal is to ingest data from an API, process it in real-time, store it in Amazon S3, and query it using Amazon Athena for analytics.
-
-
-
-
-# 🚀 End-to-End Near Real-Time Data Engineering Pipeline on AWS
+# 📈 End-to-End Near Real-Time Stock Data Pipeline on AWS
 
 ![AWS](https://img.shields.io/badge/AWS-%23FF9900.svg?style=for-the-badge&logo=amazon-aws&logoColor=white)
-![Python](https://img.shields.io/badge/python-3.11-blue?style=for-the-badge&logo=python)
-![GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12-blue?style=for-the-badge&logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
+![Amazon S3](https://img.shields.io/badge/Amazon%20S3-569A31?style=for-the-badge&logo=amazons3&logoColor=white)
+![Apache Parquet](https://img.shields.io/badge/Apache%20Parquet-50ABF1?style=for-the-badge&logo=apache&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
 
-A fully automated, near real-time data pipeline that ingests stock market data from the **Alpha Vantage API**, streams it through **AWS Kinesis Firehose**, stores it in **Amazon S3**, and makes it queryable via **Amazon Athena** — all with CI/CD deployment via GitHub Actions.
-
-> 📖 Based on the Medium series: [Part 1](https://medium.com/data-epic/end-to-end-near-real-time-data-engineering-project-using-aws-services-part-1-47bf44a5d84b) | [Part 2](https://medium.com/data-epic/end-to-end-near-real-time-data-engineering-project-using-aws-services-part-2-09be1533952a)
+A fully serverless, near real-time data pipeline that ingests live stock market data for **TSLA** and **NVDA** from the Alpha Vantage API, streams it through **AWS Kinesis Firehose**, transforms and stores it as partitioned **Parquet files** in Amazon S3, queries it with **Amazon Athena**, and visualizes it via a **Streamlit dashboard**.
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏗️ Architecture
 
 ```
-┌─────────────────┐     ┌──────────────────┐     ┌─────────────────────┐
-│  Alpha Vantage  │────▶│  AWS Lambda      │────▶│  Kinesis Firehose   │
-│  Stock API      │     │  (Producer)      │     │  (Delivery Stream)  │
-└─────────────────┘     └──────────────────┘     └──────────┬──────────┘
-                                 ▲                           │
-                        ┌────────┴────────┐                  ▼
-                        │  EventBridge    │         ┌────────────────┐
-                        │  (Scheduler)   │         │   Amazon S3    │
-                        └─────────────────┘         │  (Data Lake)   │
-                                                    └───────┬────────┘
-                                                            │
-                                              ┌─────────────▼──────────┐
-                                              │   AWS Glue Crawler     │
-                                              │   (Schema Discovery)   │
-                                              └─────────────┬──────────┘
-                                                            │
-                                              ┌─────────────▼──────────┐
-                                              │    Amazon Athena       │
-                                              │   (SQL Analytics)      │
-                                              └────────────────────────┘
+┌─────────────────────┐
+│   Alpha Vantage     │
+│   Stock Market API  │
+└────────┬────────────┘
+         │ HTTP Request (every 5 min)
+         ▼
+┌─────────────────────┐
+│   Amazon            │
+│   EventBridge       │──────── Triggers every 5 minutes
+└────────┬────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│   AWS Lambda        │
+│   (Producer)        │──── Fetches TSLA + NVDA data
+└────────┬────────────┘
+         │ put_record_batch()
+         ▼
+┌─────────────────────┐         ┌──────────────────────┐
+│   Kinesis           │────────▶│  S3 Raw Backup        │
+│   Data Firehose     │         │  (dp-raw-stock-data)  │
+└────────┬────────────┘         └──────────────────────┘
+         │ Invokes transformer
+         ▼
+┌─────────────────────┐
+│   AWS Lambda        │
+│   (Transformer)     │──── Cleans data + adds partition keys
+└────────┬────────────┘
+         │ Parquet conversion via Glue schema
+         ▼
+┌──────────────────────────────────────────────────┐
+│   Amazon S3 (dp-transformed-stock-data)          │
+│                                                  │
+│   data/                                          │
+│   └── symbol=TSLA/                               │
+│       └── date=2026-03-10/                       │
+│           └── hour=14/                           │
+│               └── file.parquet                   │
+└────────┬─────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│   AWS Glue          │──── Holds schema (stock_db / stock_prices)
+│   Data Catalog      │
+└────────┬────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│   Amazon Athena     │──── SQL queries directly on S3
+└────────┬────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│   Streamlit         │──── Live dashboard on localhost
+│   Dashboard         │
+└─────────────────────┘
 ```
-
-![Architecture Diagram](architecture/architecture_diagram.png)
 
 ---
 
-## 🛠️ Tech Stack
+## ⚙️ AWS Services Used
 
-| Service | Purpose |
+| Service | Role |
 |---|---|
-| **AWS Lambda** | Fetch stock data & push to Firehose |
-| **Amazon Kinesis Firehose** | Buffer & deliver streaming data to S3 |
-| **Amazon S3** | Raw data storage / data lake |
-| **AWS Glue Crawler** | Auto-discover schema from S3 data |
-| **Amazon Athena** | SQL queries on S3 data |
-| **Amazon EventBridge** | Schedule Lambda every N minutes |
-| **GitHub Actions** | CI/CD — auto-deploy Lambda on push |
-| **Alpha Vantage API** | Real-time stock market data |
+| 🕐 **Amazon EventBridge** | Triggers producer Lambda every 5 minutes |
+| ⚡ **AWS Lambda (Producer)** | Fetches stock data from API, sends to Firehose |
+| 🚀 **Amazon Kinesis Firehose** | Buffers and streams data to S3 with transformation |
+| ⚡ **AWS Lambda (Transformer)** | Cleans records, renames fields, adds partition keys |
+| 🪣 **Amazon S3 (Raw)** | Backup of all original unmodified records |
+| 🪣 **Amazon S3 (Transformed)** | Final partitioned Parquet files for analytics |
+| 🗂️ **AWS Glue Data Catalog** | Schema registry used by Athena to read Parquet |
+| 🔍 **Amazon Athena** | Serverless SQL engine querying data directly from S3 |
+| 📊 **Amazon CloudWatch** | Logs and error monitoring for Lambda + Firehose |
 
 ---
 
 ## 📁 Project Structure
 
 ```
-aws-realtime-data-pipeline/
-├── README.md
-├── architecture/
-│   ├── architecture_diagram.png
-│   └── data_flow_diagram.png
+aws-stock-pipeline/
+│
 ├── lambda/
-│   └── data_producer/
-│       ├── lambda_function.py       # Core Lambda handler
-│       └── requirements.txt
-├── scripts/
-│   ├── setup_firehose.py            # Create Kinesis Firehose stream
-│   ├── setup_s3_bucket.py           # Create & configure S3 bucket
-│   ├── setup_eventbridge.py         # Create EventBridge rule
-│   ├── setup_athena.py              # Create Athena DB + table
-│   └── test_pipeline.py             # End-to-end smoke test
+│   ├── producer.py              # Fetches API data, sends to Firehose
+│   └── transformer.py           # Transforms records, adds partition keys
+│
+├── dashboard/
+│   └── stock_dashboard.py       # Streamlit visualization dashboard
+│
 ├── sql/
-│   ├── create_table.sql             # Athena DDL
-│   └── sample_queries.sql           # Analytics queries
-├── ci-cd/
-│   └── .github/
-│       └── workflows/
-│           └── deploy_lambda.yml    # GitHub Actions CI/CD
-├── configs/
-│   ├── firehose_config.json
-│   ├── eventbridge_rule.json
-│   └── iam_policies/
-│       ├── lambda_policy.json
-│       └── firehose_policy.json
-└── docs/
-    ├── setup_guide.md
-    └── troubleshooting.md
+│   └── sample_queries.sql       # Useful Athena queries
+│
+└── README.md
 ```
 
 ---
 
-## ⚡ Prerequisites
+## 🗄️ Glue Table Schema
 
-- AWS Account with appropriate IAM permissions
-- [Alpha Vantage API Key](https://www.alphavantage.co/support/#api-key) (free)
-- Python 3.11+
-- AWS CLI configured (`aws configure`)
-- GitHub repository with Actions enabled
+**Database:** `stock_db` | **Table:** `stock_prices`
 
----
-
-## 🚀 Quick Setup
-
-### 1. Clone the repo
-```bash
-git clone https://github.com/YOUR_USERNAME/aws-realtime-data-pipeline.git
-cd aws-realtime-data-pipeline
-```
-
-### 2. Set environment variables
-```bash
-export AWS_REGION=us-east-1
-export ALPHA_VANTAGE_API_KEY=your_api_key_here
-export S3_BUCKET_NAME=your-stock-data-bucket
-export FIREHOSE_STREAM_NAME=stock-data-stream
-```
-
-### 3. Run infrastructure setup scripts
-```bash
-pip install boto3
-python scripts/setup_s3_bucket.py
-python scripts/setup_firehose.py
-python scripts/setup_eventbridge.py
-python scripts/setup_athena.py
-```
-
-### 4. Deploy Lambda (manual)
-```bash
-cd lambda/data_producer
-pip install -r requirements.txt -t .
-zip -r ../../lambda_package.zip .
-aws lambda create-function \
-  --function-name stock-data-producer \
-  --runtime python3.11 \
-  --role arn:aws:iam::YOUR_ACCOUNT_ID:role/lambda-execution-role \
-  --handler lambda_function.lambda_handler \
-  --zip-file fileb://../../lambda_package.zip
-```
-
-### 5. Set GitHub Secrets for CI/CD
-Go to **Settings → Secrets → Actions** and add:
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `AWS_REGION`
-- `ALPHA_VANTAGE_API_KEY`
-- `S3_BUCKET_NAME`
-- `FIREHOSE_STREAM_NAME`
-
-Push to `main` branch — GitHub Actions will auto-deploy Lambda! ✅
-
----
-
-## 💰 Cost Estimate
-
-Running this pipeline is **nearly free-tier eligible**:
-
-| Service | Free Tier | Estimated Cost |
+| Column | Type | Description |
 |---|---|---|
-| Lambda | 1M requests/month | ~$0 |
-| Kinesis Firehose | First 500 GB/month | ~$0–$1 |
-| S3 | 5 GB storage | ~$0 |
-| Athena | First 1 TB queries | ~$0 |
-| Glue Crawler | First 1M DPU-seconds | ~$0 |
+| `symbol` | string | Stock ticker (TSLA / NVDA) |
+| `event_time` | string | Full datetime of the record |
+| `open` | double | Opening price |
+| `high` | double | Highest price in interval |
+| `low` | double | Lowest price in interval |
+| `close` | double | Closing price |
+| `volume` | bigint | Number of shares traded |
+| `date` | string | ⭐ Partition key |
+| `hour` | int | ⭐ Partition key |
 
-> ⚠️ Always set AWS billing alerts!
+**Partition Keys:** `symbol` → `date` → `hour`
 
 ---
 
-## 📊 Sample Athena Query Results
+## 🔍 S3 Folder Structure
 
-After the pipeline runs, you can query like:
-```sql
-SELECT symbol, timestamp, open, high, low, close, volume
-FROM stock_data
-WHERE symbol = 'AAPL'
-ORDER BY timestamp DESC
-LIMIT 10;
+Data is stored in Hive-style partitioning for efficient querying:
+
 ```
+dp-transformed-stock-data/
+└── data/
+    ├── symbol=TSLA/
+    │   └── date=2026-03-10/
+    │       ├── hour=13/
+    │       │   └── file.parquet
+    │       └── hour=14/
+    │           └── file.parquet
+    └── symbol=NVDA/
+        └── date=2026-03-10/
+            └── hour=14/
+                └── file.parquet
+```
+
+---
+
+## 🔍 Sample Athena Queries
+
+```sql
+-- Register all partitions first (run once)
+MSCK REPAIR TABLE stock_prices;
+
+-- Query using partition keys (fastest + cheapest)
+SELECT * FROM stock_prices
+WHERE symbol = 'TSLA'
+AND date = '2026-03-10'
+AND hour = 14;
+
+-- Average closing price per day per stock
+SELECT symbol, date, ROUND(AVG(close), 2) AS avg_close
+FROM stock_prices
+GROUP BY symbol, date
+ORDER BY date DESC;
+
+-- Highest price NVDA ever hit
+SELECT symbol, event_time, high
+FROM stock_prices
+WHERE symbol = 'NVDA'
+ORDER BY high DESC
+LIMIT 5;
+
+-- Trading volume by hour
+SELECT hour, SUM(volume) AS total_volume
+FROM stock_prices
+GROUP BY hour
+ORDER BY total_volume DESC;
+```
+
+> 💡 **Tip:** Always filter on partition keys (`symbol`, `date`, `hour`) first — Athena will skip irrelevant folders and scan far less data, saving both time and cost.
+
+---
+
+## 📊 Streamlit Dashboard
+
+A local dashboard built with Streamlit connects directly to Athena and visualizes the pipeline data in real time.
+
+**Features:**
+- 📌 Stock selector — TSLA, NVDA, or Both
+- 📅 Date filter — picks from all available dates in the pipeline
+- 📈 Close price line chart over time
+- 🕯️ Candlestick chart (OHLC)
+- 📊 Volume bar chart by hour
+- 🔢 Key metrics — High, Low, Avg Close, Total Volume
+- 🗃️ Raw data table
+
+**Setup:**
+```bash
+pip install streamlit boto3 pyathena pandas plotly
+streamlit run dashboard/stock_dashboard.py
+```
+
+Opens at → `http://localhost:8501`
+
+---
+
+## 💰 Cost Breakdown
+
+| Service | Free Tier | Estimated Monthly Cost |
+|---|---|---|
+| AWS Lambda | 1M requests/month | ✅ Free |
+| Amazon S3 | 5 GB storage | ✅ Free |
+| Amazon EventBridge | 14M events/month | ✅ Free |
+| AWS Glue Catalog | First 1M objects | ✅ Free |
+| Amazon CloudWatch | Basic monitoring | ✅ Free |
+| Amazon Athena | ~$0.005 per query | ✅ ~$0.01 |
+| **Kinesis Firehose** | Not in free tier | 💲 ~$0.63 |
+| **Total** | | **~$0.64/month** |
+
+> ⚠️ Set up an AWS billing alert to avoid surprises!
+
+---
+
+## 🔐 IAM Permissions
+
+| Resource | Permission Required |
+|---|---|
+| Producer Lambda role | `AmazonKinesisFirehoseFullAccess` |
+| Kinesis Firehose | Auto-created service role |
+| Streamlit (local) | `AmazonAthenaFullAccess` + `AmazonS3FullAccess` |
+
+---
+
+## 🌍 AWS Region
+
+All resources deployed in **`eu-north-1`** (Europe — Stockholm)
+
+---
+
+## 📡 Data Source
+
+Stock data provided by [Alpha Vantage API](https://rapidapi.com/alphavantage/api/alpha-vantage) via RapidAPI.
+- Stocks tracked: **TSLA**, **NVDA**
+- Interval: **1 minute**
+- Trigger frequency: **every 5 minutes**
 
 ---
 
 ## 📚 Resources
 
-- [Medium Article Part 1](https://medium.com/data-epic/end-to-end-near-real-time-data-engineering-project-using-aws-services-part-1-47bf44a5d84b)
-- [Medium Article Part 2](https://medium.com/data-epic/end-to-end-near-real-time-data-engineering-project-using-aws-services-part-2-09be1533952a)
-- [Alpha Vantage API Docs](https://www.alphavantage.co/documentation/)
-- [AWS Kinesis Firehose Docs](https://docs.aws.amazon.com/firehose/)
+- [Amazon Kinesis Firehose Docs](https://docs.aws.amazon.com/firehose/)
 - [Amazon Athena Docs](https://docs.aws.amazon.com/athena/)
+- [AWS Glue Data Catalog](https://docs.aws.amazon.com/glue/)
+- [Alpha Vantage API Docs](https://www.alphavantage.co/documentation/)
+- [Streamlit Docs](https://docs.streamlit.io/)
+- [PyAthena — Python Athena Client](https://github.com/laughingman7743/PyAthena)
 
 ---
 
