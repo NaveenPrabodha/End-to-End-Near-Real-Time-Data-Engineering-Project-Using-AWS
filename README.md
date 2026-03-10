@@ -199,6 +199,8 @@ A local dashboard built with Streamlit connects directly to Athena and visualize
 - 📊 Volume bar chart by hour
 - 🔢 Key metrics — High, Low, Avg Close, Total Volume
 - 🗃️ Raw data table
+  
+<img width="2924" height="1508" alt="image" src="https://github.com/user-attachments/assets/ba3357cc-984f-4246-b7e7-063ee2f937e0" />
 
 **Setup:**
 ```bash
