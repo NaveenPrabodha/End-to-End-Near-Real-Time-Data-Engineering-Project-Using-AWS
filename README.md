@@ -9,7 +9,7 @@
 
 A fully serverless, near real-time data pipeline that ingests live stock market data for **TSLA** and **NVDA** from the Alpha Vantage API, streams it through **AWS Kinesis Firehose**, transforms and stores it as partitioned **Parquet files** in Amazon S3, queries it with **Amazon Athena**, and visualizes it via a **Streamlit dashboard**.
 
-Dashboard Link: http://51.21.209.34:8501 
+[Dashboard Link](http://51.21.209.34:8501)
 ---
 
 ## 🏗️ Architecture
