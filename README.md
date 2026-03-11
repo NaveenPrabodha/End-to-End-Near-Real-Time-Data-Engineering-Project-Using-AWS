@@ -117,7 +117,7 @@ aws-stock-pipeline/
 
 | Column | Type | Description |
 |---|---|---|
-| `symbol` | string | S⭐ Partition key(TSLA / NVDA) |
+| `symbol` | string | ⭐ Partition key (TSLA / NVDA) |
 | `event_time` | string | Full datetime of the record |
 | `open` | double | Opening price |
 | `high` | double | Highest price in interval |
